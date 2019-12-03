@@ -369,7 +369,7 @@ public class MessagingClient extends AbstractVerticle {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        if (args.length < 5) {
+        if (args.length < 6) {
             System.err.println("Usage: java -jar messaging-client.jar <kubernetes api url> <kubernetes api token> <address namespace> <address space> <number of addresses> <links per connection>");
             System.exit(1);
         }
@@ -379,6 +379,12 @@ public class MessagingClient extends AbstractVerticle {
         String addressSpaceName = args[3];
         int numAddresses = Integer.parseInt(args[4]);
         int linksPerConnection = Integer.parseInt(args[5]);
+        String endpointHost = "";
+        int endpointPort = 0;
+        if (args.length > 7) {
+            endpointHost = args[6];
+            endpointPort = Integer.parseInt(args[7]);
+        }
 
         NamespacedKubernetesClient client = new DefaultKubernetesClient(new ConfigBuilder()
                 .withMasterUrl(masterUrl)
@@ -388,14 +394,14 @@ public class MessagingClient extends AbstractVerticle {
                 .build());
 
         // Get endpoint info
-        var addressSpaceClient = client.customResources(CoreCrd.addressSpaces(), AddressSpace.class, AddressSpaceList.class, DoneableAddressSpace.class).inNamespace(namespace);
-        AddressSpace addressSpace = addressSpaceClient.withName(addressSpaceName).get();
-        String endpointHost = "";
-        int endpointPort = 0;
-        for (EndpointStatus status : addressSpace.getStatus().getEndpointStatuses()) {
-            if (status.getName().equals("messaging")) {
-                endpointHost = status.getExternalHost();
-                endpointPort = status.getExternalPorts().get("amqps");
+        if (endpointHost.isEmpty() || endpointPort == 0) {
+            var addressSpaceClient = client.customResources(CoreCrd.addressSpaces(), AddressSpace.class, AddressSpaceList.class, DoneableAddressSpace.class).inNamespace(namespace);
+            AddressSpace addressSpace = addressSpaceClient.withName(addressSpaceName).get();
+            for (EndpointStatus status : addressSpace.getStatus().getEndpointStatuses()) {
+                if (status.getName().equals("messaging")) {
+                    endpointHost = status.getExternalHost();
+                    endpointPort = status.getExternalPorts().get("amqps");
+                }
             }
         }
 

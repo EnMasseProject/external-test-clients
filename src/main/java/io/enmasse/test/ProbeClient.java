@@ -116,6 +116,12 @@ public class ProbeClient extends AbstractVerticle {
         String namespace = args[2];
         String addressSpaceName = args[3];
         int numAddresses = Integer.parseInt(args[4]);
+        String endpointHost = "";
+        int endpointPort = 0;
+        if (args.length > 5) {
+            endpointHost = args[5];
+            endpointPort = Integer.parseInt(args[6]);
+        }
 
         NamespacedKubernetesClient client = new DefaultKubernetesClient(new ConfigBuilder()
                 .withMasterUrl(masterUrl)
@@ -125,14 +131,14 @@ public class ProbeClient extends AbstractVerticle {
                 .build());
 
         // Get endpoint info
-        var addressSpaceClient = client.customResources(CoreCrd.addressSpaces(), AddressSpace.class, AddressSpaceList.class, DoneableAddressSpace.class).inNamespace(namespace);
-        AddressSpace addressSpace = addressSpaceClient.withName(addressSpaceName).get();
-        String endpointHost = "";
-        int endpointPort = 0;
-        for (EndpointStatus status : addressSpace.getStatus().getEndpointStatuses()) {
-            if (status.getName().equals("messaging")) {
-                endpointHost = status.getExternalHost();
-                endpointPort = status.getExternalPorts().get("amqps");
+        if (endpointHost.isEmpty() || endpointPort == 0) {
+            var addressSpaceClient = client.customResources(CoreCrd.addressSpaces(), AddressSpace.class, AddressSpaceList.class, DoneableAddressSpace.class).inNamespace(namespace);
+            AddressSpace addressSpace = addressSpaceClient.withName(addressSpaceName).get();
+            for (EndpointStatus status : addressSpace.getStatus().getEndpointStatuses()) {
+                if (status.getName().equals("messaging")) {
+                    endpointHost = status.getExternalHost();
+                    endpointPort = status.getExternalPorts().get("amqps");
+                }
             }
         }
 
