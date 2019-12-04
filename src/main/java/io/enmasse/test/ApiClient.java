@@ -156,7 +156,7 @@ public class ApiClient {
             boolean isReady = false;
             while (!isReady) {
                 Address a = tryUntilSuccessRecordFailure(() -> addressClient.withName(name).get());
-                isReady = a.getStatus().isReady();
+                isReady = a != null && a.getStatus() != null && a.getStatus().isReady();
                 if (!isReady) {
                     Thread.sleep(1000);
                 }
