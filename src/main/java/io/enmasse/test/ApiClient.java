@@ -152,12 +152,18 @@ public class ApiClient {
             createTimer.observeDuration();
             createHist.recordValue(TimeUnit.NANOSECONDS.toMillis(createTime));
 
+            long now = System.currentTimeMillis();
+            long timeout = 300_000;
             var readyTimer = metricReadyHist.labels(addressType.name()).startTimer();
             boolean isReady = false;
             while (!isReady) {
                 Address a = tryUntilSuccessRecordFailure(() -> addressClient.withName(name).get());
                 isReady = a != null && a.getStatus() != null && a.getStatus().isReady();
                 if (!isReady) {
+                    // Avoid stalling forever
+                    if (now + timeout <= System.currentTimeMillis()) {
+                        break;
+                    }
                     Thread.sleep(1000);
                 }
             }
