@@ -60,6 +60,11 @@ public class ApiClient {
             .help("Address outage")
             .register();
 
+    private static final Counter readyFailures = Counter.build()
+            .name("test_api_ready_failures_total")
+            .help("Ready failures")
+            .register();
+
     private static final Counter failureCount = Counter.build()
             .name("test_api_failures_total")
             .help("Api failures")
@@ -153,7 +158,7 @@ public class ApiClient {
             createHist.recordValue(TimeUnit.NANOSECONDS.toMillis(createTime));
 
             long now = System.currentTimeMillis();
-            long timeout = 300_000;
+            long timeout = 600_000;
             var readyTimer = metricReadyHist.labels(addressType.name()).startTimer();
             boolean isReady = false;
             while (!isReady) {
@@ -162,6 +167,7 @@ public class ApiClient {
                 if (!isReady) {
                     // Avoid stalling forever
                     if (now + timeout <= System.currentTimeMillis()) {
+                        readyFailures.inc();
                         break;
                     }
                     Thread.sleep(1000);

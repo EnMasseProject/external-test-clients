@@ -25,6 +25,7 @@ spec:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
+      "id": 2,
       "links": [],
       "panels": [
         {
@@ -38,6 +39,91 @@ spec:
             "w": 12,
             "x": 0,
             "y": 0
+          },
+          "id": 8,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {},
+          "percentage": false,
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "test_api_ready_failures_total",
+              "format": "time_series",
+              "intervalFactor": 1,
+              "legendFormat": "ready failures",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Address ready failures (timeout 10 minutes)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "fill": 1,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
           },
           "id": 6,
           "legend": {
@@ -121,7 +207,7 @@ spec:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 16
           },
           "id": 4,
           "legend": {
@@ -207,7 +293,7 @@ spec:
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 24
           },
           "id": 2,
           "legend": {
@@ -343,5 +429,5 @@ spec:
       "timezone": "",
       "title": "API test",
       "uid": "IRPQ9uxZk",
-      "version": 1
+      "version": 134
     }
