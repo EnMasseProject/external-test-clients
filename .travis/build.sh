@@ -9,6 +9,11 @@ then
     VERSION="${TRAVIS_TAG}"
 fi
 
+git clone https://github.com/EnMasseProject/enmasse.git
+pushd enmasse/api-model
+mvn clean install -DskipTests
+popd
+
 mvn clean install
 docker build --build-arg version=${VERSION} -t ${REPO}:${COMMIT} . || exit 1
 
