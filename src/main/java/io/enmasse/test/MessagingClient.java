@@ -201,6 +201,7 @@ public class MessagingClient extends AbstractVerticle {
                         if (lastDisconnect.get() > 0) {
                             long duration = System.nanoTime() - lastDisconnect.get();
                             log.info("Reconnection of " + linkType + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
+                            reconnectDelay.set(1);
                             reconnectTime.get(addressType).recordValue(TimeUnit.NANOSECONDS.toMillis(duration));
                             reconnectHist.observe(toSeconds(duration));
                         }
@@ -278,6 +279,7 @@ public class MessagingClient extends AbstractVerticle {
             if (lastDetach.get(address).get() > 0) {
                 long duration = System.nanoTime() - lastDetach.get(address).get();
                 log.info("Reattach of " + linkType + " to " + address + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
+                reattachDelay.get(address).set(1);
                 reattachTime.get(addressType).recordValue(TimeUnit.NANOSECONDS.toMillis(duration));
                 reattachHist.labels(addressType.name()).observe(toSeconds(duration));
             }
