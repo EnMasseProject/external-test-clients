@@ -32,6 +32,8 @@ import org.HdrHistogram.Histogram;
 import org.apache.qpid.proton.Proton;
 import org.apache.qpid.proton.amqp.messaging.AmqpValue;
 import org.apache.qpid.proton.message.Message;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -46,6 +48,7 @@ import java.util.stream.Collectors;
 import static io.enmasse.test.Common.waitUntilReady;
 
 public class MessagingClient extends AbstractVerticle {
+    private static final Logger log = LoggerFactory.getLogger(MessagingClient.class);
     private static final Counter connectSuccesses = Counter.build()
             .name("test_connect_success_total")
             .help("N/A")
@@ -192,12 +195,12 @@ public class MessagingClient extends AbstractVerticle {
                         if (startPromise != null) {
                             startPromise.complete();
                         }
-                        System.out.println(linkType + " connected to " + connection.getRemoteContainer() + " on " + host + ":" + port);
+                        log.info(linkType + " connected to " + connection.getRemoteContainer() + " on " + host + ":" + port);
 
                         // If we've been reconnected. Record how long it took
                         if (lastDisconnect.get() > 0) {
                             long duration = System.nanoTime() - lastDisconnect.get();
-                            System.out.println("Reconnection of " + linkType + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
+                            log.info("Reconnection of " + linkType + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
                             reconnectTime.get(addressType).recordValue(TimeUnit.NANOSECONDS.toMillis(duration));
                             reconnectHist.observe(toSeconds(duration));
                         }
@@ -223,7 +226,7 @@ public class MessagingClient extends AbstractVerticle {
                         lastDetach.get(address).set(now);
                     }
                     conn.close();
-                    System.out.println("Disconnected " + linkType + "!");
+                    log.debug("Disconnected " + linkType + "!");
                     reconnectFn.run();
                 });
 
@@ -234,7 +237,7 @@ public class MessagingClient extends AbstractVerticle {
                     for (String address : addresses) {
                         lastDetach.get(address).set(now);
                     }
-                    System.out.println("Closed " + linkType + "!");
+                    log.debug("Closed " + linkType + "!");
                     reconnectFn.run();
                 });
 
@@ -257,7 +260,7 @@ public class MessagingClient extends AbstractVerticle {
 
     private void attachLink(ProtonConnection connection, String address) {
         Runnable reattachFn = () -> {
-            System.out.println("Reattaching " + linkType + " to " + address + " in " + reattachDelay.get(address).get() + " ms");
+            log.info("Reattaching " + linkType + " to " + address + " in " + reattachDelay.get(address).get() + " ms");
             Context context = vertx.getOrCreateContext();
             vertx.setTimer(reattachDelay.get(address).get(), handler -> {
                 context.runOnContext(c -> {
@@ -274,7 +277,7 @@ public class MessagingClient extends AbstractVerticle {
             // We've been reattached. Record how long it took
             if (lastDetach.get(address).get() > 0) {
                 long duration = System.nanoTime() - lastDetach.get(address).get();
-                System.out.println("Reattach of " + linkType + " to " + address + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
+                log.info("Reattach of " + linkType + " to " + address + " took " + TimeUnit.NANOSECONDS.toMillis(duration) + " ms");
                 reattachTime.get(addressType).recordValue(TimeUnit.NANOSECONDS.toMillis(duration));
                 reattachHist.labels(addressType.name()).observe(toSeconds(duration));
             }
@@ -292,13 +295,13 @@ public class MessagingClient extends AbstractVerticle {
                 }
             });
             receiver.detachHandler(detachResult -> {
-                System.out.println("Detached " + linkType + " for " + address + "!");
+                log.debug("Detached " + linkType + " for " + address + "!");
                 detaches.inc();
                 lastDetach.get(address).set(System.nanoTime());
                 reattachFn.run();
             });
             receiver.closeHandler(closeResult -> {
-                System.out.println("Closed " + linkType + " for " + address + "!");
+                log.debug("Closed " + linkType + " for " + address + "!");
                 detaches.inc();
                 lastDetach.get(address).set(System.nanoTime());
                 reattachFn.run();
@@ -319,13 +322,13 @@ public class MessagingClient extends AbstractVerticle {
                 }
             });
             sender.detachHandler(detachResult -> {
-                System.out.println("Detached " + linkType + " for " + address + "!");
+                log.debug("Detached " + linkType + " for " + address + "!");
                 detaches.inc();
                 lastDetach.get(address).set(System.nanoTime());
                 reattachFn.run();
             });
             sender.closeHandler(closeResult -> {
-                System.out.println("Closed " + linkType + " for " + address + "!");
+                log.debug("Closed " + linkType + " for " + address + "!");
                 detaches.inc();
                 lastDetach.get(address).set(System.nanoTime());
                 reattachFn.run();
@@ -438,7 +441,7 @@ public class MessagingClient extends AbstractVerticle {
                     .endSpec()
                     .build();
             addressClient.createOrReplace(resource);
-            System.out.println("Created address " + address);
+            log.info("Created address " + address);
             if (i % 2 == 0) {
                 anycastAddresses.add(resource);
             } else {
@@ -459,24 +462,24 @@ public class MessagingClient extends AbstractVerticle {
         while (true) {
             Thread.sleep(30000);
             try {
-                System.out.println("# Metrics");
-                System.out.println("Successful connects = " + connectSuccesses.get());
-                System.out.println("Failed connects = " + connectFailures.get());
-                System.out.println("Disconnects = " + disconnects.get());
-                System.out.println("Reconnects = " + reconnects.get());
-                System.out.println("Reconnect duration (anycast) 99p = " + reconnectTime.get(AddressType.anycast).getValueAtPercentile(percentile));
-                System.out.println("Reconnect duration (queue) 99p = " + reconnectTime.get(AddressType.queue).getValueAtPercentile(percentile));
-                System.out.println("Reattach duration (anycast) 99p = " + reconnectTime.get(AddressType.anycast).getValueAtPercentile(percentile));
-                System.out.println("Reattach duration (queue) 99p = " + reconnectTime.get(AddressType.queue).getValueAtPercentile(percentile));
-                System.out.println("Num accepted anycast = " + numAccepted.labels(AddressType.anycast.name()).get());
-                System.out.println("Num rejected anycast = " + numRejected.labels(AddressType.anycast.name()).get());
-                System.out.println("Num modified anycast = " + numModified.labels(AddressType.anycast.name()).get());
-                System.out.println("Num released anycast = " + numReleased.labels(AddressType.anycast.name()).get());
-                System.out.println("Num accepted queue = " + numAccepted.labels(AddressType.queue.name()).get());
-                System.out.println("Num rejected queue = " + numRejected.labels(AddressType.queue.name()).get());
-                System.out.println("Num modified queue = " + numModified.labels(AddressType.queue.name()).get());
-                System.out.println("Num released queue = " + numReleased.labels(AddressType.queue.name()).get());
-                System.out.println("##########");
+                log.info("# Metrics");
+                log.info("Successful connects = " + connectSuccesses.get());
+                log.info("Failed connects = " + connectFailures.get());
+                log.info("Disconnects = " + disconnects.get());
+                log.info("Reconnects = " + reconnects.get());
+                log.info("Reconnect duration (anycast) 99p = " + reconnectTime.get(AddressType.anycast).getValueAtPercentile(percentile));
+                log.info("Reconnect duration (queue) 99p = " + reconnectTime.get(AddressType.queue).getValueAtPercentile(percentile));
+                log.info("Reattach duration (anycast) 99p = " + reconnectTime.get(AddressType.anycast).getValueAtPercentile(percentile));
+                log.info("Reattach duration (queue) 99p = " + reconnectTime.get(AddressType.queue).getValueAtPercentile(percentile));
+                log.info("Num accepted anycast = " + numAccepted.labels(AddressType.anycast.name()).get());
+                log.info("Num rejected anycast = " + numRejected.labels(AddressType.anycast.name()).get());
+                log.info("Num modified anycast = " + numModified.labels(AddressType.anycast.name()).get());
+                log.info("Num released anycast = " + numReleased.labels(AddressType.anycast.name()).get());
+                log.info("Num accepted queue = " + numAccepted.labels(AddressType.queue.name()).get());
+                log.info("Num rejected queue = " + numRejected.labels(AddressType.queue.name()).get());
+                log.info("Num modified queue = " + numModified.labels(AddressType.queue.name()).get());
+                log.info("Num released queue = " + numReleased.labels(AddressType.queue.name()).get());
+                log.info("##########");
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -494,9 +497,9 @@ public class MessagingClient extends AbstractVerticle {
 
             vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.receiver, addressList), result -> {
                 if (result.succeeded()) {
-                    System.out.println("Started receiver client for addresses " + addressList);
+                    log.info("Started receiver client for addresses " + addressList);
                 } else {
-                    System.out.println("Failed starting receiver client for addresses " + addressList);
+                    log.warn("Failed starting receiver client for addresses " + addressList);
                 }
             });
 
@@ -504,9 +507,9 @@ public class MessagingClient extends AbstractVerticle {
 
             vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.sender, addressList), result -> {
                 if (result.succeeded()) {
-                    System.out.println("Started sender client for addresses " + addressList);
+                    log.info("Started sender client for addresses " + addressList);
                 } else {
-                    System.out.println("Failed starting sender client for addresses " + addressList);
+                    log.warn("Failed starting sender client for addresses " + addressList);
                 }
             });
         }
