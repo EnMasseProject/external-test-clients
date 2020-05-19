@@ -29,6 +29,13 @@ import io.vertx.proton.ProtonReceiver;
 import io.vertx.proton.ProtonSender;
 import org.HdrHistogram.AtomicHistogram;
 import org.HdrHistogram.Histogram;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 import org.apache.qpid.proton.Proton;
 import org.apache.qpid.proton.amqp.messaging.AmqpValue;
 import org.apache.qpid.proton.message.Message;
@@ -105,6 +112,13 @@ public class MessagingClient extends AbstractVerticle {
             .buckets(1.0, 2.5, 7.5, 10.0, 25.0, 50.0, 75.0, 100.0)
             .register();
 
+    private static final io.prometheus.client.Histogram sendLatencyTime = io.prometheus.client.Histogram.build()
+            .name("test_send_latency_seconds_total")
+            .help("N/A")
+            .labelNames("addressType")
+            .buckets(0.01, 0.1, 1.0, 10.0, 100.0)
+            .register();
+
     private static final Counter numReceived = Counter.build()
             .name("test_received_total")
             .help("N/A")
@@ -146,8 +160,9 @@ public class MessagingClient extends AbstractVerticle {
     private final AtomicLong lastDisconnect = new AtomicLong(0);
     private final AtomicLong reconnectDelay = new AtomicLong(1);
     private final Map<String, AtomicLong> reattachDelay = new HashMap<>();
+    private final String message;
 
-    private MessagingClient(String host, int port, AddressType addressType, LinkType linkType, List<String> addresses) {
+    private MessagingClient(String host, int port, AddressType addressType, LinkType linkType, List<String> addresses, String message) {
         this.host = host;
         this.port = port;
         this.addressType = addressType;
@@ -157,6 +172,7 @@ public class MessagingClient extends AbstractVerticle {
             lastDetach.put(address, new AtomicLong(0));
             reattachDelay.put(address, new AtomicLong(1));
         }
+        this.message = message;
     }
 
     @Override
@@ -341,13 +357,14 @@ public class MessagingClient extends AbstractVerticle {
 
     private void sendMessage(String address, ProtonSender sender) {
         Message message = Proton.message();
-        message.setBody(new AmqpValue("HELLO"));
+        message.setBody(new AmqpValue(message));
         message.setAddress(address);
         if (addressType.equals(AddressType.queue)) {
             message.setDurable(true);
         }
         //System.out.println("Sending message to " + address);
         Context context = vertx.getOrCreateContext();
+        io.prometheus.client.Histogram.Timer sendStart = sendLatencyTime.labels(addressType.name()).startTimer();
         sender.send(message, delivery -> {
             switch (delivery.getRemoteState().getType()) {
                 case Accepted:
@@ -364,6 +381,7 @@ public class MessagingClient extends AbstractVerticle {
                     break;
             }
             if (delivery.remotelySettled()) {
+                sendStart.observeDuration();
                 vertx.setTimer(2000, id -> {
                     context.runOnContext(c -> {
                         sendMessage(address, sender);
@@ -373,22 +391,102 @@ public class MessagingClient extends AbstractVerticle {
         });
     }
 
-    public static void main(String[] args) throws InterruptedException, IOException {
-        if (args.length < 6) {
-            System.err.println("Usage: java -jar messaging-client.jar <kubernetes api url> <kubernetes api token> <address namespace> <address space> <number of addresses> <links per connection>");
-            System.exit(1);
+    public static void main(String[] args) throws InterruptedException, IOException, ParseException {
+        CommandLineParser parser = new DefaultParser();
+        Options options = new Options()
+                .addOption(Option.builder("k")
+                        .longOpt("kubernetes-api")
+                        .hasArg()
+                        .required()
+                        .desc("Kubernetes API url")
+                        .build())
+                .addOption(Option.builder("t")
+                        .longOpt("kubernetes-token")
+                        .hasArg()
+                        .required()
+                        .desc("Kubernetes API token")
+                        .build())
+                .addOption(Option.builder("n")
+                        .longOpt("namespace")
+                        .desc("Namespace to create addresses")
+                        .hasArg()
+                        .required()
+                        .build())
+                .addOption(Option.builder("a")
+                        .longOpt("address-space")
+                        .desc("Which address space to use")
+                        .hasArg()
+                        .required()
+                        .build())
+                .addOption(Option.builder("c")
+                        .longOpt("address-count")
+                        .hasArg()
+                        .required()
+                        .desc("Number of addresses to create")
+                        .build())
+                .addOption(Option.builder("l")
+                        .longOpt("links-per-connection")
+                        .desc("Number of links per connection")
+                        .hasArg()
+                        .required()
+                        .build())
+                .addOption(Option.builder("host")
+                        .hasArg()
+                        .optionalArg(true)
+                        .desc("Host to use for messaging endpoint (overrides default)")
+                        .build())
+                .addOption(Option.builder("p")
+                        .longOpt("port")
+                        .hasArg()
+                        .optionalArg(true)
+                        .desc("Port to use for messaging endpoint (overrides default)")
+                        .build())
+                .addOption(Option.builder("m")
+                        .longOpt("message-size")
+                        .hasArg()
+                        .optionalArg(true)
+                        .desc("Size of messages to send")
+                        .build())
+                .addOption(Option.builder("h")
+                        .longOpt("help")
+                        .hasArg(false)
+                        .optionalArg(true)
+                        .desc("Show help/usage info")
+                        .build());
+
+        CommandLine commandLine = null;
+        try {
+            commandLine = parser.parse(options, args);
+        } catch (ParseException e) {
+            System.err.println(e.getMessage());
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("messaging-client.jar", options);
+            System.exit(0);
         }
-        String masterUrl = args[0];
-        String token = args[1];
-        String namespace = args[2];
-        String addressSpaceName = args[3];
-        int numAddresses = Integer.parseInt(args[4]);
-        int linksPerConnection = Integer.parseInt(args[5]);
+
+        if (commandLine.hasOption("h")) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("messaging-client.jar", options);
+            System.exit(0);
+        }
+
+        String masterUrl = commandLine.getOptionValue("k");
+        String token = commandLine.getOptionValue("t");
+        String namespace = commandLine.getOptionValue("n");
+        String addressSpaceName = commandLine.getOptionValue("a");
+        int numAddresses = Integer.parseInt(commandLine.getOptionValue("c"));
+        int linksPerConnection = Integer.parseInt(commandLine.getOptionValue("l"));
         String endpointHost = "";
         int endpointPort = 0;
-        if (args.length > 7) {
-            endpointHost = args[6];
-            endpointPort = Integer.parseInt(args[7]);
+        if (commandLine.hasOption("host")) {
+            endpointHost = commandLine.getOptionValue("host");
+        }
+        if (commandLine.hasOption("p")) {
+            endpointPort = Integer.parseInt(commandLine.getOptionValue("p"));
+        }
+        int messageSize = 8;
+        if (commandLine.hasOption("m")) {
+            messageSize = Integer.parseInt(commandLine.getOptionValue("m"));
         }
 
         NamespacedKubernetesClient client = new DefaultKubernetesClient(new ConfigBuilder()
@@ -458,8 +556,10 @@ public class MessagingClient extends AbstractVerticle {
 
         Vertx vertx = Vertx.vertx();
 
-        deployClients(vertx, endpointHost, endpointPort, AddressType.anycast, linksPerConnection, anycastAddresses);
-        deployClients(vertx, endpointHost, endpointPort, AddressType.queue, linksPerConnection, queueAddresses);
+        String messagePayload = String.format("%0" + messageSize + "d", 0).replace('0', 'A');
+
+        deployClients(vertx, endpointHost, endpointPort, AddressType.anycast, linksPerConnection, anycastAddresses, messagePayload);
+        deployClients(vertx, endpointHost, endpointPort, AddressType.queue, linksPerConnection, queueAddresses, messagePayload);
 
         while (true) {
             Thread.sleep(30000);
@@ -488,7 +588,7 @@ public class MessagingClient extends AbstractVerticle {
         }
     }
 
-    private static void deployClients(Vertx vertx, String endpointHost, int endpointPort, AddressType addressType, int linksPerConnection, List<Address> addresses) throws InterruptedException {
+    private static void deployClients(Vertx vertx, String endpointHost, int endpointPort, AddressType addressType, int linksPerConnection, List<Address> addresses, String message) throws InterruptedException {
         List<List<Address>> groups = new ArrayList<>();
         for (int i = 0; i < addresses.size() / linksPerConnection; i++) {
             groups.add(addresses.subList(i * linksPerConnection, (i + 1) * linksPerConnection));
@@ -497,7 +597,7 @@ public class MessagingClient extends AbstractVerticle {
         for (List<Address> group : groups) {
             List<String> addressList = group.stream().map(a -> a.getSpec().getAddress()).collect(Collectors.toList());
 
-            vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.receiver, addressList), result -> {
+            vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.receiver, addressList, message), result -> {
                 if (result.succeeded()) {
                     log.info("Started receiver client for addresses " + addressList);
                 } else {
@@ -507,7 +607,7 @@ public class MessagingClient extends AbstractVerticle {
 
             Thread.sleep(10);
 
-            vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.sender, addressList), result -> {
+            vertx.deployVerticle(new MessagingClient(endpointHost, endpointPort, addressType, LinkType.sender, addressList, message), result -> {
                 if (result.succeeded()) {
                     log.info("Started sender client for addresses " + addressList);
                 } else {
