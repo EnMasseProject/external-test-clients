@@ -160,9 +160,9 @@ public class MessagingClient extends AbstractVerticle {
     private final AtomicLong lastDisconnect = new AtomicLong(0);
     private final AtomicLong reconnectDelay = new AtomicLong(1);
     private final Map<String, AtomicLong> reattachDelay = new HashMap<>();
-    private final String message;
+    private final String messagePayload;
 
-    private MessagingClient(String host, int port, AddressType addressType, LinkType linkType, List<String> addresses, String message) {
+    private MessagingClient(String host, int port, AddressType addressType, LinkType linkType, List<String> addresses, String messagePayload) {
         this.host = host;
         this.port = port;
         this.addressType = addressType;
@@ -172,7 +172,7 @@ public class MessagingClient extends AbstractVerticle {
             lastDetach.put(address, new AtomicLong(0));
             reattachDelay.put(address, new AtomicLong(1));
         }
-        this.message = message;
+        this.messagePayload = messagePayload;
     }
 
     @Override
@@ -357,14 +357,15 @@ public class MessagingClient extends AbstractVerticle {
 
     private void sendMessage(String address, ProtonSender sender) {
         Message message = Proton.message();
-        message.setBody(new AmqpValue(message));
+        message.setBody(new AmqpValue(messagePayload));
         message.setAddress(address);
         if (addressType.equals(AddressType.queue)) {
             message.setDurable(true);
         }
-        //System.out.println("Sending message to " + address);
+//        System.out.println("Sending message to " + address);
         Context context = vertx.getOrCreateContext();
         io.prometheus.client.Histogram.Timer sendStart = sendLatencyTime.labels(addressType.name()).startTimer();
+//        System.out.println("Started timer for " + address);
         sender.send(message, delivery -> {
             switch (delivery.getRemoteState().getType()) {
                 case Accepted:
@@ -381,6 +382,7 @@ public class MessagingClient extends AbstractVerticle {
                     break;
             }
             if (delivery.remotelySettled()) {
+//                System.out.println("Settled for " + address);
                 sendStart.observeDuration();
                 vertx.setTimer(2000, id -> {
                     context.runOnContext(c -> {
@@ -489,6 +491,8 @@ public class MessagingClient extends AbstractVerticle {
             messageSize = Integer.parseInt(commandLine.getOptionValue("m"));
         }
 
+        String messagePayload = String.format("%0" + messageSize + "d", 0).replace('0', 'A');
+
         NamespacedKubernetesClient client = new DefaultKubernetesClient(new ConfigBuilder()
                 .withMasterUrl(masterUrl)
                 .withOauthToken(token)
@@ -556,7 +560,6 @@ public class MessagingClient extends AbstractVerticle {
 
         Vertx vertx = Vertx.vertx();
 
-        String messagePayload = String.format("%0" + messageSize + "d", 0).replace('0', 'A');
 
         deployClients(vertx, endpointHost, endpointPort, AddressType.anycast, linksPerConnection, anycastAddresses, messagePayload);
         deployClients(vertx, endpointHost, endpointPort, AddressType.queue, linksPerConnection, queueAddresses, messagePayload);
