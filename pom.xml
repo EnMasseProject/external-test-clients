@@ -15,7 +15,7 @@
     <maven.compiler.target>11</maven.compiler.target>
     <fabric8.kubernetes-client.version>4.6.2</fabric8.kubernetes-client.version>
     <commons-cli.version>1.4</commons-cli.version>
-    <enmasse.version>0.31-SNAPSHOT</enmasse.version>
+    <enmasse.version>0.32-SNAPSHOT</enmasse.version>
   </properties>
   <dependencies>
     <dependency>
