@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi8/openjdk-11
+FROM quay.io/enmasse/java-base:11-1
 
 ARG version
 ARG commit
